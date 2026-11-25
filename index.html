@@ -65,7 +65,6 @@
   </div>
 </div>
 
-<!-- API Key Modal -->
 <div class="modal" id="apiModal">
   <div class="card">
     <h3>🔑 Free Gemini API Key</h3>
@@ -78,7 +77,6 @@
   </div>
 </div>
 
-<!-- Profile Modal -->
 <div class="modal" id="profModal">
   <div class="card">
     <h3>👤 Your Details (Optional)</h3>
@@ -95,7 +93,6 @@
   </div>
 </div>
 
-<!-- Memory Modal -->
 <div class="modal" id="memModal">
   <div class="card">
     <h3>🧠 Long-Term Memories</h3>
@@ -109,13 +106,7 @@
 </div>
 
 <script>
-  const FREE_MODELS = [
-    "gemini-4-hydrogen",
-    "gemini-3.5-flash-lite",
-    "gemini-3.6-flash",
-    "gemini-3.8-flash"
-  ];
-
+  const FREE_MODELS = ["gemini-4-hydrogen", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash"];
   const CHANNELS = [
     { id: "group", label: "🕊️ Group" },
     { id: "Krishna", label: "🦚 Krishna" },
@@ -164,4 +155,168 @@ REAL TIME: ${getLiveTime()}
 LONG-TERM MEMORIES:
 ${mems}
 
-RULES
+RULES:
+1. ZERO ROBOT VIBES: Natural Tenglish (if user writes Tenglish) or casual English. Short bursts, double texts ok.
+2. 3-MODE SOLUTIONS:
+   - Casual ("Hai/Hey/Bore"): Real friends reacting to time/memories. ZERO lectures/books!
+   - Practical Problems (boss, money, career, sleep, breakup): Step-by-step REAL-LIFE solutions (NO forced quotes).
+   - Deep Spiritual/Ethical/Astrology: Detailed explanation from relevant tradition/book (story + meaning + today's step).
+3. TOUGH LOVE: Lovingly correct wrong/harmful actions.
+4. SAFETY: If crisis/self-harm, care deeply & share India Tele-MANAS 14416.
+Return ONLY valid JSON:
+{"user_reaction":"","replies":[{"sender":"${chatMode==="group"?"Krishna":chatMode}","message":"...","reference":""}],"new_memory":""}`;
+  }
+
+  function renderChannels() {
+    document.getElementById("channelBar").innerHTML = CHANNELS.map(c =>
+      `<button class="pill ${chatMode===c.id?"active":""}" onclick="switchChannel('${c.id}')">${c.label}</button>`
+    ).join("");
+    document.getElementById("headTitle").textContent = chatMode === "group" ? "🕊️ Soul Circle" : `🔒 DM: ${chatMode}`;
+    document.getElementById("subStatus").textContent = chatMode === "group" ? "Krishna, Jesus, Shiva, Buddha, Noor" : "Private 1-on-1 Space";
+  }
+
+  function switchChannel(id) { chatMode = id; renderChannels(); renderChat(); }
+
+  function renderChat() {
+    const box = document.getElementById("chatBox");
+    const msgs = allChats[chatMode] || [];
+    box.innerHTML = `<div class="msg system">${chatMode==="group"?"🕊️ Soul Circle AI Friends • Say Hai or share anything!":"🔒 Private 1-on-1 chat with "+chatMode}</div>`;
+    msgs.forEach(m => box.appendChild(createMsgEl(m)));
+    document.getElementById("memCnt").textContent = memories.length;
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function createMsgEl(m) {
+    const d = document.createElement("div");
+    d.className = `msg ${m.type}`;
+    if (m.type === "user") {
+      d.innerHTML = `<div>${esc(m.text)}</div><div class="meta">${m.reaction?`<span class="react">${m.reaction}</span>`:""}<span>${m.time} ✓✓</span></div>`;
+    } else {
+      const meta = PERSONAS[m.sender] || { color:"#fff", emoji:"✨" };
+      d.onclick = () => { if (confirm(`Report this AI message from ${m.sender}?`)) alert("Reported! Thank you."); };
+      d.innerHTML = `<div class="sender" style="color:${meta.color}">${meta.emoji} ${m.sender}</div><div>${esc(m.text)}</div>${m.reference?`<span class="ref">📖 ${esc(m.reference)}</span>`:""}<div class="meta"><span>${m.time}</span></div>`;
+    }
+    return d;
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+  function saveChats() { localStorage.setItem("sc_all_chats", JSON.stringify(allChats)); }
+
+  async function callGeminiWithFallback(contents) {
+    const apiKey = localStorage.getItem("sc_api_key");
+    let lastErr = "Server busy, malli try cheyi dude.";
+    for (const model of FREE_MODELS) {
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          method: "POST",
+          headers: { "Content-Type":"application/json", "x-goog-api-key": apiKey },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: buildPrompt() }] },
+            contents,
+            generationConfig: { responseMimeType: "application/json" }
+          })
+        });
+        const json = await res.json();
+        if (!json.error && json?.candidates?.[0]?.content?.parts?.[0]?.text) return json;
+        lastErr = json?.error?.message || lastErr;
+        if (json?.error?.code === 400 || json?.error?.code === 403 || /API key/i.test(lastErr)) break;
+      } catch (err) { lastErr = err.message; }
+    }
+    throw new Error(lastErr);
+  }
+
+  async function sendMessage() {
+    const inp = document.getElementById("msgInput");
+    const text = inp.value.trim();
+    if (!text) return;
+    inp.value = "";
+
+    const timeNow = new Date().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+    if (!allChats[chatMode]) allChats[chatMode] = [];
+    const userMsg = { id: Date.now(), type:"user", text, time:timeNow, reaction:"" };
+    allChats[chatMode].push(userMsg);
+    saveChats(); renderChat();
+
+    const apiKey = localStorage.getItem("sc_api_key");
+    const sub = document.getElementById("subStatus");
+
+    if (!apiKey) {
+      sub.textContent = "online (Demo)...";
+      await new Promise(r => setTimeout(r, 700));
+      allChats[chatMode].push({ type:"bot", sender: chatMode==="group"?"Krishna":chatMode, text:"Heyy! Live replies kosam ⚙️ nokki free Gemini API key paste cheyi dude!", reference:"", time:timeNow });
+      saveChats(); renderChat();
+      sub.textContent = "Krishna, Jesus, Shiva, Buddha, Noor";
+      return;
+    }
+
+    sub.textContent = "reading...";
+    try {
+      const contents = allChats[chatMode].slice(-16).map(m => ({
+        role: m.type === "user" ? "user" : "model",
+        parts: [{ text: m.type === "user" ? m.text : `${m.sender}: ${m.text}` }]
+      }));
+
+      const data = await callGeminiWithFallback(contents);
+      const raw = (data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}").replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(raw);
+
+      if (parsed.user_reaction) { userMsg.reaction = parsed.user_reaction; saveChats(); renderChat(); }
+      for (const r of parsed.replies || []) {
+        sub.textContent = `${r.sender} is typing...`;
+        await new Promise(res => setTimeout(res, 800));
+        allChats[chatMode].push({
+          id: Date.now()+Math.random(), type:"bot", sender:r.sender,
+          text:r.message, reference:r.reference||"",
+          time: new Date().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })
+        });
+        saveChats(); renderChat();
+      }
+      if (parsed.new_memory && parsed.new_memory.trim()) {
+        const dt = new Date().toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" });
+        memories.push({ date:dt, text:parsed.new_memory.trim() });
+        memories = memories.slice(-30);
+        localStorage.setItem("sc_memories", JSON.stringify(memories));
+        document.getElementById("memCnt").textContent = memories.length;
+      }
+    } catch (e) {
+      alert("Error: " + e.message);
+    } finally {
+      sub.textContent = chatMode === "group" ? "Krishna, Jesus, Shiva, Buddha, Noor" : "Private 1-on-1 Space";
+    }
+  }
+
+  function openModal(id) {
+    if (id === "apiModal") document.getElementById("apiKeyInput").value = localStorage.getItem("sc_api_key") || "";
+    if (id === "profModal") {
+      document.getElementById("pName").value = profile.name || "";
+      document.getElementById("pCity").value = profile.city || "";
+      document.getElementById("pDob").value = profile.dob || "";
+      document.getElementById("pTime").value = profile.birth_time || "";
+      document.getElementById("pPlace").value = profile.birth_place || "";
+    }
+    if (id === "memModal") {
+      document.getElementById("memList").innerHTML = memories.length
+        ? memories.map((m,i) => `<div class="mem-item"><div><small style="color:#00a884;">${m.date}</small><br>${esc(m.text)}</div><button class="btn-sm" onclick="delMem(${i})">✕</button></div>`).join("")
+        : "<p>Inka em memories save avvaledu.</p>";
+    }
+    document.getElementById(id).style.display = "flex";
+  }
+  function closeModal(id) { document.getElementById(id).style.display = "none"; }
+  function saveKey() { localStorage.setItem("sc_api_key", document.getElementById("apiKeyInput").value.trim()); closeModal("apiModal"); }
+  function saveProfile() {
+    profile = {
+      name: document.getElementById("pName").value, city: document.getElementById("pCity").value,
+      dob: document.getElementById("pDob").value, birth_time: document.getElementById("pTime").value,
+      birth_place: document.getElementById("pPlace").value
+    };
+    localStorage.setItem("sc_profile", JSON.stringify(profile));
+    closeModal("profModal");
+  }
+  function delMem(i) { memories.splice(i,1); localStorage.setItem("sc_memories", JSON.stringify(memories)); openModal("memModal"); document.getElementById("memCnt").textContent = memories.length; }
+  function clearAllChats() { if (confirm("Clear all chats?")) { allChats = {}; saveChats(); renderChat(); closeModal("memModal"); } }
+
+  renderChannels();
+  renderChat();
+</script>
+</body>
+</html>
